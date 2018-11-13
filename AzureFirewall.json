@@ -426,7 +426,7 @@
               "subnet": {
                 "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'azfw-vNET-HUB', 'AzureFirewallSubnet')]"
               },
-              "InternalPublicIPAddress": {
+              "PublicIPAddress": {
                 "id": "[resourceId('Microsoft.Network/publicIPAddresses','AZFW-PIP')]"
               }
             }
