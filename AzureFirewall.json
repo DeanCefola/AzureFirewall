@@ -5,13 +5,13 @@
     "adminUsername": {
       "type": "string",
       "metadata": {
-        "description": "Username for the Virtual Machine."
+        "description": "Username for the Virtual Machines"
       }
     },
     "adminPassword": {
       "type": "securestring",
       "metadata": {
-        "description": "Password for the Virtual Machine."
+        "description": "Password for the Virtual Machines"
       }
     },    
     "IPRange": {
@@ -25,7 +25,7 @@
     }    
   },
   "variables": {    
-    
+    "test": "test"
   },
   "resources": [
     {
@@ -43,26 +43,53 @@
       "properties": {
         "addressSpace": {
           "addressPrefixes": [
-            "[concat(parameters('IPRange'),'.0.0/23')]"
+            "[concat(parameters('IPRange'),'.0.0/22')]"
           ]
         },
         "subnets": [
           {
-            "name": "JumpboxSubnet",
+            "name": "GatewaySubnet",
             "properties": {
               "addressPrefix": "[concat(parameters('IPRange'),'.0.0/24')]"
             }
           },
           {
-            "name": "AzureFirewallSubnet",
+            "name": "JumpboxSubnet",
             "properties": {
               "addressPrefix": "[concat(parameters('IPRange'),'.1.0/24')]"
+            }
+          },
+          {
+            "name": "AzureFirewallSubnet",
+            "properties": {
+              "addressPrefix": "[concat(parameters('IPRange'),'.2.0/24')]"
             }
           }
         ]
       },
       "dependsOn": [
 
+      ],
+      "resources": [
+        {
+          "type": "virtualNetworkPeerings",
+          "name": "Hub--Spoke",
+          "apiVersion": "2016-06-01",
+          "location": "[resourceGroup().location]",
+          "properties": {
+            "allowVirtualNetworkAccess": "true",
+            "allowForwardedTraffic": "true",
+            "allowGatewayTransit": "false",
+            "useRemoteGateways": "false",
+            "remoteVirtualNetwork": {
+              "id": "[resourceId('Microsoft.Network/virtualNetworks', 'azfw-vNET-SPOKE')]"
+            }
+          },
+          "dependsOn": [
+            "[concat('Microsoft.Network/virtualNetworks/', 'azfw-vNET-HUB')]",
+            "[concat('Microsoft.Network/virtualNetworks/', 'azfw-vNET-SPOKE')]"
+          ]
+        }
       ]
     },
     {
@@ -80,14 +107,14 @@
       "properties": {
         "addressSpace": {
           "addressPrefixes": [
-            "[concat(parameters('IPRange'),'.2.0/24')]"
+            "[concat(parameters('IPRange'),'.4.0/24')]"
           ]
         },
         "subnets": [
           {
             "name": "ServersSubnet",
             "properties": {
-              "addressPrefix": "[concat(parameters('IPRange'),'.2.0/24')]",
+              "addressPrefix": "[concat(parameters('IPRange'),'.4.0/26')]",
               "routeTable": {
                 "id": "[resourceId('Microsoft.Network/routeTables', 'AZ-RouteTable')]"
               }
@@ -97,6 +124,27 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Network/routeTables', 'AZ-RouteTable')]"
+      ],
+      "resources": [
+        {
+          "type": "virtualNetworkPeerings",
+          "name": "Spoke--Hub",
+          "apiVersion": "2016-06-01",
+          "location": "[resourceGroup().location]",
+          "properties": {
+            "allowVirtualNetworkAccess": "true",
+            "allowForwardedTraffic": "true",
+            "allowGatewayTransit": "false",
+            "useRemoteGateways": "false",
+            "remoteVirtualNetwork": {
+              "id": "[resourceId('Microsoft.Network/virtualNetworks', 'azfw-vNET-HUB')]"
+            }
+          },
+          "dependsOn": [
+            "[concat('Microsoft.Network/virtualNetworks/', 'azfw-vNET-HUB')]",
+            "[concat('Microsoft.Network/virtualNetworks/', 'azfw-vNET-SPOKE')]"
+          ]
+        }
       ]
     },
     {
@@ -122,7 +170,15 @@
             "properties": {
               "addressPrefix": "0.0.0.0/0",
               "nextHopType": "VirtualAppliance",
-              "nextHopIpAddress": "[concat(parameters('IPRange'),'.1.4')]"
+              "nextHopIpAddress": "[concat(parameters('IPRange'),'.2.4')]"
+            }
+          },
+          {
+            "name": "HUBRoute",
+            "properties": {
+              "addressPrefix": "[concat(parameters('IPRange'),'.1.0/24')]",
+              "nextHopType": "VirtualAppliance",
+              "nextHopIpAddress": "[concat(parameters('IPRange'),'.2.4')]"
             }
           }
         ]
@@ -401,7 +457,7 @@
         "name": "AZFW-PIP-Copy",
         "count": 1
       },
-      "properties": {
+      "properties": {        
         "publicIPAllocationMethod": "Static",
         "publicIPAddressVersion": "IPv4"
       }
@@ -410,7 +466,7 @@
       "type": "Microsoft.Network/azureFirewalls",
       "name": "AZFW-1",
       "apiVersion": "2018-08-01",
-      "location": "eastus",
+      "location": "[resourceGroup().location]",
       "tags": {
         "displayName": "Firewall",
         "Application": "Azure Learning",
@@ -422,11 +478,11 @@
           {
             "name": "IpConf",
             "properties": {
-              "privateIPAddress": "172.16.1.4",
+              "privateIPAddress": "[concat(parameters('IPRange'),'.2.4')]",
               "subnet": {
                 "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'azfw-vNET-HUB', 'AzureFirewallSubnet')]"
               },
-              "PublicIPAddress": {
+              "publicIPAddress": {
                 "id": "[resourceId('Microsoft.Network/publicIPAddresses','AZFW-PIP')]"
               }
             }
@@ -436,7 +492,6 @@
           {
             "name": "ALLOW--Internal--ADRules",
             "properties": {
-              "provisioningState": "Succeeded",
               "priority": 100,
               "action": {
                 "type": "Allow"
@@ -453,7 +508,7 @@
                     "*"
                   ],
                   "destinationAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ],
                   "destinationPorts": [
                     "53",
@@ -474,7 +529,7 @@
                     "*"
                   ],
                   "destinationAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ],
                   "destinationPorts": [
                     "25",
@@ -498,7 +553,7 @@
                     "*"
                   ],
                   "destinationAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ],
                   "destinationPorts": [
                     "123",
@@ -515,7 +570,7 @@
                     "*"
                   ],
                   "destinationAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ],
                   "destinationPorts": [
                     "445"
@@ -551,7 +606,7 @@
                     "*.microsoft.com"
                   ],
                   "sourceAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ]
                 },
                 {
@@ -571,7 +626,7 @@
                     "*.bing.com"
                   ],
                   "sourceAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ]
                 },
                 {
@@ -591,7 +646,7 @@
                     "*.bing.com"
                   ],
                   "sourceAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ]
                 },
                 {
@@ -611,7 +666,7 @@
                   ],
                   "targetFqdns": [],
                   "sourceAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ]
                 },
                 {
@@ -631,7 +686,7 @@
                   ],
                   "targetFqdns": [],
                   "sourceAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ]
                 },
                 {
@@ -653,7 +708,7 @@
                   ],
                   "targetFqdns": [],
                   "sourceAddresses": [
-                    "172.16.2.0/24"
+                    "[concat(parameters('IPRange'),'.4.0/24')]"
                   ]
                 }
               ]
@@ -663,44 +718,89 @@
         "natRuleCollections": [
           {
             "name": "ALLOW--Inbound--Remote",
-            "properties": {              
+            "properties": {
               "priority": 1010,
               "action": {
                 "type": "Dnat"
               },
               "rules": [
                 {
-                  "name": "RDP",
+                  "name": "External-RDP",
                   "protocols": [
                     "TCP"
                   ],
-                  "translatedAddress": "172.16.2.4",
+                  "translatedAddress": "[concat(parameters('IPRange'),'.4.4')]",
                   "translatedPort": "3389",
                   "sourceAddresses": [
                     "*"
                   ],
                   "destinationAddresses": [
-                    "104.45.169.247"
+                    "[reference(concat('Microsoft.Network/publicIPAddresses/', 'AZFW-PIP'), '2018-08-01').ipAddress]"
                   ],
                   "destinationPorts": [
                     "33890"
                   ]
                 },
                 {
-                  "name": "SSH",
+                  "name": "External-SSH",
                   "protocols": [
                     "TCP"
                   ],
-                  "translatedAddress": "172.16.2.4",
+                  "translatedAddress": "[concat(parameters('IPRange'),'.4.4')]",
                   "translatedPort": "22",
                   "sourceAddresses": [
                     "*"
                   ],
                   "destinationAddresses": [
-                    "104.45.169.247"
+                    "[reference(concat('Microsoft.Network/publicIPAddresses/', 'AZFW-PIP'), '2018-08-01').ipAddress]"
                   ],
                   "destinationPorts": [
                     "220"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "ALLOW--Inbound--Internal",
+            "properties": {
+              "priority": 1009,
+              "action": {
+                "type": "Dnat"
+              },
+              "rules": [
+                {
+                  "name": "Internal-RDP",
+                  "protocols": [
+                    "TCP"
+                  ],
+                  "translatedAddress": "[concat(parameters('IPRange'),'.4.4')]",
+                  "translatedPort": "3389",
+                  "sourceAddresses": [
+                    "[concat(parameters('IPRange'),'.1.4')]"
+                  ],
+                  "destinationAddresses": [
+                    "[reference(concat('Microsoft.Network/publicIPAddresses/', 'AZFW-PIP'), '2018-08-01').ipAddress]"
+                  ],
+                  "destinationPorts": [
+                    "3389"
+                  ]
+                },
+                {
+                  "name": "Internal-SSH",
+                  "protocols": [
+                    "TCP"
+                  ],
+                  "translatedAddress": "[concat(parameters('IPRange'),'.4.4')]",
+                  "translatedPort": "22",
+                  "sourceAddresses": [
+                    "[concat(parameters('IPRange'),'.1.4')]"
+                  ],
+                  "destinationAddresses": [
+                    "[reference(concat('Microsoft.Network/publicIPAddresses/', 'AZFW-PIP'), '2018-08-01').ipAddress]"
+                  ],
+                  "destinationPorts": [
+                    "22"
                   ]
                 }
               ]
